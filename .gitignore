@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.DS_Store
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*
+secrets*
+backups/
