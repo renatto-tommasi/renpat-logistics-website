@@ -1,0 +1,74 @@
+name: Frontend checks and deployment
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Test deployment safeguards and validate frontend
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py' -v
+          python3 scripts/validate_frontend.py
+      - name: Report pending activation
+        if: vars.RENPAT_DEPLOY_READY != 'true'
+        run: echo 'Checks only. Production deployment is disabled until secure setup and controlled verification are complete.' >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    concurrency:
+      group: renpat-production-frontend
+      cancel-in-progress: false
+    needs: checks
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      vars.RENPAT_DEPLOY_READY == 'true'
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Skip superseded commits
+        id: latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test -n "$current"
+          echo "current=$([ "$current" = "$GITHUB_SHA" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Stage credentials privately and deploy only frontend files
+        if: steps.latest.outputs.current == 'true'
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ vars.RENPAT_SSH_HOST }}
+          DEPLOY_PORT: ${{ vars.RENPAT_SSH_PORT }}
+          DEPLOY_USER: ${{ vars.RENPAT_SSH_USER }}
+          DEPLOY_ROOT: ${{ vars.RENPAT_DOCUMENT_ROOT }}
+          DEPLOY_BACKUP_ROOT: ${{ vars.RENPAT_BACKUP_ROOT }}
+          PRIVATE_KEY: ${{ secrets.RENPAT_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.RENPAT_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$PRIVATE_KEY" && test -n "$KNOWN_HOSTS"
+          export DEPLOY_KEY_FILE="$RUNNER_TEMP/renpat-deploy-key"
+          export DEPLOY_KNOWN_HOSTS_FILE="$RUNNER_TEMP/renpat-known-hosts"
+          trap 'rm -f "$DEPLOY_KEY_FILE" "$DEPLOY_KNOWN_HOSTS_FILE"' EXIT
+          printf '%s\n' "$PRIVATE_KEY" > "$DEPLOY_KEY_FILE"
+          printf '%s\n' "$KNOWN_HOSTS" > "$DEPLOY_KNOWN_HOSTS_FILE"
+          unset PRIVATE_KEY KNOWN_HOSTS
+          python3 scripts/deploy_frontend.py
