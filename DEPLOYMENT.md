@@ -2,9 +2,37 @@
 
 ## Status
 
-The workflow performs frontend checks. Production transfer is **disabled by default**: it runs only when the repository variable `RENPAT_DEPLOY_READY` is exactly `true`, the ref is `main`, and the checks pass. Credentials, SSH activation, host identity, absolute directories and a successful controlled production test are separate prerequisites. Committing this setup does not mean automatic deployment is connected or verified.
+Automatic publishing is active as of November 1, 2026. Every push to `main` runs
+frontend checks and deploys the latest main commit after they pass. Superseded
+commits are skipped. Pull requests run checks only. The repository variable
+`RENPAT_DEPLOY_READY` is `true`; setting it to `false` disables production transfer.
+The `production` environment is restricted to branch `main`.
 
-On October 7, 2026, read-only hPanel inspection showed Premium Web Hosting with SSH supported but inactive. The site's relative upload directory is `public_html`. The absolute operating-system path and server host-key fingerprint still need independent verification. Do not guess either value.
+On November 1, 2026, the existing dedicated SSH connection authenticated with
+strict host-key checking against the hPanel-verified pinned key. Python 3 and
+`fcntl` are available. The verified document root is
+`/home/u421832739/domains/renpatlogistics.mx/public_html`. All 18 allowlisted
+files are regular, canonical, single-link files and match this checkout byte for
+byte. The homepage, `/privacidad` and `/api/config` returned HTTP 200; config
+returned a JSON object. No lead was submitted.
+
+The GitHub `production` environment has been created and restricted to branch
+`main`. A private mode-700 backup directory was created and verified on the same
+filesystem at `/home/u421832739/domains/renpatlogistics.mx/.renpat-deploy`.
+All five connection/path variables and both encrypted deployment secrets are
+configured in that environment using the existing dedicated key and pinned host
+entry. The user explicitly approved persistent GitHub deployment access and the
+controlled first transfer. The key authenticates as the hosting account; the
+18-file limit is enforced by this reviewed workflow, not an SSH account sandbox.
+
+The [controlled first run](https://github.com/renatto-tommasi/renpat-logistics-website/actions/runs/41393632169)
+completed successfully: checks and transfer passed, including read-only live byte
+comparison and route checks. Its release ID is
+`6ffdd52001d25735600edbb492182c8816e8ca80-41393632169-1`.
+Host-side status was independently read back as `verified`; the mode-700 backup
+contains all 18 prior files, matching the deployed frontend. Failure restoration
+was validated locally with injected transfer, smoke-check and termination failures;
+no deliberate failure was injected into production.
 
 ## Scope and safeguards
 

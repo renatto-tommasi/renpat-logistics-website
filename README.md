@@ -16,7 +16,7 @@ The quote form depends on the existing server's `/api/config` and `/api/leads` e
 
 ## Frontend checks and deployment
 
-GitHub Actions checks frontend changes. Production deployment is gated off until the secure Hostinger connection and controlled live test are complete. See [DEPLOYMENT.md](DEPLOYMENT.md) for the setup status, explicit file scope, activation and rollback instructions.
+GitHub Actions checks frontend changes and automatically publishes the latest passing `main` commit to Hostinger. Pull requests run checks only. The controlled first deployment succeeded on November 1, 2026. See [DEPLOYMENT.md](DEPLOYMENT.md) for verification evidence, explicit file scope, the disable switch and rollback instructions.
 
 Existing server APIs, `.htaccess`, PHP files, private configuration and customer data are deliberately outside deployment scope. Do not use a destructive directory sync.
 
