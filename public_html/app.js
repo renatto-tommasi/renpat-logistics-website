@@ -874,19 +874,36 @@
 
   /* ---------- Selector de ruta → formulario de cotización ---------- */
   const picker = $('[data-route-picker]');
+  // Keep our generated destination separate from the visitor's cargo notes.
+  let generatedDestinationNote = '';
+  const updateDestinationNote = destination => {
+    const notes = $('#notes');
+    if (!notes) return;
+    if (generatedDestinationNote) {
+      const lines = notes.value.split('\n');
+      const previous = lines.indexOf(generatedDestinationNote);
+      if (previous !== -1) lines.splice(previous, 1);
+      notes.value = lines.join('\n');
+    }
+    generatedDestinationNote = destination ? `Destino: ${destination}.` : '';
+    if (generatedDestinationNote) {
+      notes.value = generatedDestinationNote + (notes.value ? `\n${notes.value}` : '');
+    }
+  };
+  const quoteForm = $('#quote-form');
+  if (quoteForm) quoteForm.addEventListener('reset', () => { generatedDestinationNote = ''; });
+  const mainDestination = $('#destination');
+  if (mainDestination) mainDestination.addEventListener('change', () => updateDestinationNote(''));
   const fillForm = (origin, dest) => {
     const originSelect = $('#origin');
     const destSelect = $('#destination');
-    const notes = $('#notes');
     if (!originSelect || !destSelect) return;
     const has = (select, value) => [...select.options].some(o => o.value === value || o.text === value);
     originSelect.value = has(originSelect, origin) ? origin : 'Otra ciudad';
     if (dest) {
-      if (has(destSelect, dest)) destSelect.value = dest;
-      else {
-        destSelect.value = 'Otra ciudad';
-        if (notes && !notes.value.trim()) notes.value = `Destino: ${dest}. `;
-      }
+      const supported = has(destSelect, dest);
+      destSelect.value = supported ? dest : 'Otra ciudad';
+      updateDestinationNote(supported ? '' : dest);
     }
   };
   if (picker) {
@@ -906,10 +923,9 @@
     });
   }
 
-  // Rutas de las tarjetas que no están en la lista del formulario
-  document.querySelectorAll('[data-destination-note]').forEach(link => link.addEventListener('click', () => {
-    const notes = $('#notes');
-    if (notes && !notes.value.trim()) notes.value = `Destino: ${link.dataset.destinationNote}. `;
+  // Supported cards also clear a previously generated custom destination.
+  document.querySelectorAll('[data-destination]').forEach(link => link.addEventListener('click', () => {
+    updateDestinationNote(link.dataset.destinationNote || '');
   }));
 
   /* ---------- Itinerario: el tramo se dibuja al llegar ---------- */
