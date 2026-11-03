@@ -720,7 +720,8 @@
    - Sin JavaScript la escena se ve apilada; con "reducir movimiento", quieta. */
 (() => {
   'use strict';
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let reduced = motion.matches;
   const $ = selector => document.querySelector(selector);
   const scene = $('[data-scene]');
 
@@ -730,6 +731,9 @@
     const rail = scene.querySelector('.rail');
     const track = scene.querySelector('[data-rail-track]');
     const anchor = scene.querySelector('.scene-anchor');
+    const hero = scene.querySelector('.hero-copy');
+    const routes = scene.querySelector('.routes-panel');
+    const routesHead = scene.querySelector('.routes-head');
     const cards = [...track.querySelectorAll('.route-card')];
     const countLabel = scene.querySelector('[data-route-count]');
     const regionLabel = scene.querySelector('[data-route-region-name]');
@@ -741,20 +745,43 @@
     }));
     const stateOf = Object.fromEntries(cards.map(card => [card.dataset.routeChapter, card.dataset.routeState]));
     let geo = null, shownKey = null, travel = 0, lastY = window.scrollY, drawn = reduced ? 1 : 0, pickedKey = '', frame = null;
-    scene.classList.add('is-live');
+    const clamp = value => Math.min(1, Math.max(0, value));
+    const ease = value => { const t = clamp(value); return t * t * (3 - 2 * t); };
 
     const measure = () => {
-      const vh = window.innerHeight;
+      // Use the stable viewport height so mobile browser chrome does not move
+      // the handoff while scrolling. Short screens retain the natural layout.
+      scene.classList.toggle('is-live', !reduced);
+      const vh = Math.max(1, Math.round(sticky.clientHeight || window.innerHeight));
+      const mobile = window.innerWidth <= 860;
+      const headerOffset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--header-offset')) || 84;
+      const heroHeight = hero.offsetHeight;
+      const mapRoom = vh - headerOffset - heroHeight - 40;
+      const live = !reduced && (mobile ? mapRoom >= 96 : heroHeight + headerOffset + 64 <= vh);
+      scene.classList.toggle('is-live', live);
+      const mapHeight = Math.min(vh * .30, window.innerWidth * .72, Math.max(96, mapRoom));
+      const contentTop = headerOffset + mapHeight + 16;
+      sticky.style.setProperty('--map-height', `${mapHeight.toFixed(1)}px`);
+      sticky.style.setProperty('--content-top', `${contentTop.toFixed(1)}px`);
+      sticky.style.setProperty('--routes-rail-top', `${(contentTop + routesHead.offsetHeight + 22).toFixed(1)}px`);
       const style = getComputedStyle(rail);
       const padL = parseFloat(style.paddingLeft) || 0;
-      const visible = rail.clientWidth - padL - (parseFloat(style.paddingRight) || 0);
-      const intro = Math.round(vh * 0.7);
+      const visible = Math.max(1, rail.clientWidth - padL - (parseFloat(style.paddingRight) || 0));
+      const intro = Math.max(1, Math.round(vh * .65));
       const distance = Math.max(0, Math.round(track.scrollWidth - visible));
-      const hold = Math.round(vh * 0.3);
-      scene.style.height = `${vh + intro + distance + hold}px`;
-      anchor.style.top = `${intro}px`;
-      anchor.style.height = `${distance + hold}px`;
-      geo = { vh, intro, distance, padL, top: scene.getBoundingClientRect().top + window.scrollY };
+      const hold = Math.round(vh * .2);
+      if (live) {
+        scene.style.height = `${vh + intro + distance + hold}px`;
+        // Compensate for the page's sticky-header scroll padding. #rutas lands
+        // on fully revealed cards, rather than halfway through the crossfade.
+        anchor.style.top = `${intro + headerOffset}px`;
+        anchor.style.height = `${Math.max(1, distance + hold - headerOffset)}px`;
+      } else {
+        scene.style.removeProperty('height');
+        anchor.style.top = `${routes.offsetTop}px`;
+        anchor.style.height = `${routes.offsetHeight}px`;
+      }
+      geo = { live, vh, visible, intro, distance, padL, top: scene.getBoundingClientRect().top + window.scrollY };
     };
 
     // Resalta una ruta en el mapa (y su tarjeta, si la hay)
@@ -778,23 +805,30 @@
       frame = null;
       if (!geo) measure();
       const s = window.scrollY - geo.top;
-      const t = Math.min(1, Math.max(0, s / geo.intro));
-      const p = geo.distance ? Math.min(1, Math.max(0, (s - geo.intro) / geo.distance)) : 0;
+      const t = geo.live ? clamp(s / geo.intro) : 0;
+      const p = geo.live && geo.distance ? clamp((s - geo.intro) / geo.distance) : 0;
       const x = p * geo.distance;
-      sticky.style.setProperty('--t', t.toFixed(4));
+      const heroOut = ease((t - .10) / .40);
+      const routesIn = ease((t - .30) / .40);
+      sticky.style.setProperty('--t', ease(t).toFixed(4));
+      sticky.style.setProperty('--hero-out', heroOut.toFixed(4));
+      sticky.style.setProperty('--routes-in', routesIn.toFixed(4));
       sticky.style.setProperty('--x', `${x.toFixed(1)}px`);
       sticky.style.setProperty('--p', p.toFixed(4));
-      scene.dataset.phase = t < 0.5 ? 'hero' : 'routes';
+      scene.dataset.phase = !geo.live ? 'static' : t < .30 ? 'hero' : t < .70 ? 'transition' : 'routes';
+      hero.inert = geo.live && heroOut > .95;
+      routes.inert = geo.live && routesIn < .90;
+      if (reduced) drawn = 1;
 
-      if (t > 0.85) {
-        // Celular: manda la tarjeta más centrada. Escritorio: un foco que recorre el riel.
-        const first = cards[0], last = cards[cards.length - 1];
-        const startX = first.offsetLeft + first.offsetWidth / 2;
-        const endX = last.offsetLeft + last.offsetWidth / 2 - geo.distance;
-        const focus = window.innerWidth <= 860 ? window.innerWidth / 2 - geo.padL : startX + (endX - startX) * p;
+      if (geo.live && routesIn >= .9 && cards.length) {
+        // Both staggered rows share a real horizontal coordinate system.
+        const trackLeft = track.getBoundingClientRect().left;
+        const centers = cards.map(card => card.getBoundingClientRect().left - trackLeft + card.offsetWidth / 2);
+        const startX = centers[0], endX = centers[centers.length - 1] - geo.distance;
+        const focus = window.innerWidth <= 860 ? geo.visible / 2 : startX + (endX - startX) * p;
         let best = 0, bestGap = Infinity;
-        cards.forEach((card, i) => {
-          const gap = Math.abs(card.offsetLeft + card.offsetWidth / 2 - x - focus);
+        centers.forEach((center, i) => {
+          const gap = Math.abs(center - x - focus);
           if (gap < bestGap) { bestGap = gap; best = i; }
         });
         show(cards[best].dataset.routeChapter, best);
@@ -821,6 +855,7 @@
     const drawRoutes = () => {
       const start = performance.now() + 150;
       const intro = now => {
+        if (reduced) { drawn = 1; render(); return; }
         const k = Math.min(1, Math.max(0, (now - start) / 1600));
         drawn = 1 - Math.pow(1 - k, 3);
         render();
@@ -848,13 +883,17 @@
     window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(relayout, 120); });
     window.addEventListener('load', relayout);
     if (document.fonts) document.fonts.ready.then(relayout);
+    motion.addEventListener?.('change', event => { reduced = event.matches; relayout(); });
 
-    // Con teclado: al enfocar una tarjeta, la página se desplaza hasta mostrarla
+    // Keyboard focus follows the card's position, not its index across rows.
+    // Pointer focus must not move a link between pointerdown and click.
     track.addEventListener('focusin', event => {
       const card = event.target.closest('.route-card');
-      if (!card || !geo) return;
-      const p = cards.length > 1 ? cards.indexOf(card) / (cards.length - 1) : 0;
-      window.scrollTo({ top: geo.top + geo.intro + p * geo.distance, behavior: 'instant' });
+      if (!card || !geo || !geo.live || !event.target.matches(':focus-visible')) return;
+      const center = card.getBoundingClientRect().left - track.getBoundingClientRect().left + card.offsetWidth / 2;
+      const x = Math.max(0, Math.min(geo.distance, center - geo.visible / 2));
+      sticky.scrollLeft = 0;
+      window.scrollTo({ top: geo.top + geo.intro + x, behavior: 'instant' });
     });
 
     // Selector de la portada: resalta la ruta elegida en el mapa
